@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Live Pitch Tracker</title>
+  <title>Live Pitch Graph</title>
   <style>
     body {
       font-family: sans-serif;
@@ -28,78 +28,80 @@
     const analyser = audioCtx.createAnalyser();
     analyser.fftSize = 2048;
     const bufferLength = analyser.fftSize;
-    const data = new Float32Array(bufferLength);
+    const buffer = new Float32Array(bufferLength);
 
     let time = 0;
     const points = [];
 
-    async function setupMic() {
+    async function setup() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const source = audioCtx.createMediaStreamSource(stream);
         source.connect(analyser);
-        draw();
+        requestAnimationFrame(draw);
       } catch (err) {
-        alert('Microphone access denied or error occurred.');
+        alert("Error accessing mic");
         console.error(err);
       }
     }
 
-    function autoCorrelate(buf, sampleRate) {
-      let SIZE = buf.length;
-      let MAX_SAMPLES = Math.floor(SIZE / 2);
-      let bestOffset = -1;
-      let bestCorrelation = 0;
+    function autoCorrelate(buffer, sampleRate) {
+      let SIZE = buffer.length;
       let rms = 0;
 
       for (let i = 0; i < SIZE; i++) {
-        rms += buf[i] * buf[i];
+        rms += buffer[i] * buffer[i];
       }
       rms = Math.sqrt(rms / SIZE);
-      if (rms < 0.01) return -1; // silence
+      if (rms < 0.01) return -1;
 
-      for (let offset = 15; offset < MAX_SAMPLES; offset++) {
+      let bestOffset = -1;
+      let bestCorrelation = 0;
+
+      for (let offset = 15; offset < SIZE / 2; offset++) {
         let correlation = 0;
-        for (let i = 0; i < MAX_SAMPLES; i++) {
-          correlation += Math.abs((buf[i]) - (buf[i + offset]));
+        for (let i = 0; i < SIZE / 2; i++) {
+          correlation += buffer[i] * buffer[i + offset];
         }
-        correlation = 1 - (correlation / MAX_SAMPLES);
         if (correlation > bestCorrelation) {
           bestCorrelation = correlation;
           bestOffset = offset;
         }
       }
 
-      if (bestCorrelation > 0.9) {
-        return sampleRate / bestOffset;
+      if (bestCorrelation > 0.01) {
+        const frequency = sampleRate / bestOffset;
+        return frequency;
       }
+
       return -1;
     }
 
     function draw() {
-      analyser.getFloatTimeDomainData(data);
-      const pitch = autoCorrelate(data, audioCtx.sampleRate);
+      analyser.getFloatTimeDomainData(buffer);
+      const pitch = autoCorrelate(buffer, audioCtx.sampleRate);
 
       if (pitch > 50 && pitch < 1000) {
         points.push([time, pitch]);
         time += 0.05;
-        if (points.length > 1000) points.shift(); // limit for performance
+        if (points.length > 1000) points.shift();
       }
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.beginPath();
       points.forEach(([t, p], i) => {
-        const x = t * 20; // time scaling
-        const y = canvas.height - (p / 1000) * canvas.height; // pitch scaling
+        const x = t * 10;
+        const y = canvas.height - (p / 1000) * canvas.height;
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       });
+      ctx.strokeStyle = 'black';
       ctx.stroke();
 
       requestAnimationFrame(draw);
     }
 
-    setupMic();
+    setup();
   </script>
 </body>
 </html>
