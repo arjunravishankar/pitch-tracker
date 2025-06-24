@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Live Pitch Tracker</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      text-align: center;
+      background: #f7f7f7;
+      margin: 0;
+      padding: 2em;
+    }
+    canvas {
+      border: 1px solid #ccc;
+      background: #fff;
+    }
+  </style>
+</head>
+<body>
+  <h1>Real-Time Pitch Graph</h1>
+  <canvas id="pitchCanvas" width="800" height="400"></canvas>
+  <script type="module">
+    import { PitchDetector } from 'https://cdn.skypack.dev/pitchy';
+
+    const canvas = document.getElementById("pitchCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const analyser = audioCtx.createAnalyser();
+    const bufferLength = 2048;
+    const data = new Float32Array(bufferLength);
+    const pitchDetector = await PitchDetector.forFloat32Array(audioCtx.sampleRate);
+
+    async function setupMic() {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const source = audioCtx.createMediaStreamSource(stream);
+      source.connect(analyser);
+      draw();
+    }
+
+    let time = 0;
+    const points = [];
+
+    function draw() {
+      analyser.getFloatTimeDomainData(data);
+      const [pitch, clarity] = pitchDetector.findPitch(data);
+
+      if (clarity > 0.8 && pitch) {
+        points.push([time, pitch]);
+        time += 0.05;
+        if (points.length > 1000) points.shift(); // limit points for performance
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.beginPath();
+      points.forEach(([t, p], i) => {
+        const x = t * 20; // time scaling
+        const y = canvas.height - (p / 1000) * canvas.height; // pitch scaling
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      requestAnimationFrame(draw);
+    }
+
+    setupMic();
+  </script>
+</body>
+</html>
