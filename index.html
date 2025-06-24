@@ -2,18 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Live Pitch Graph</title>
+  <title>Live Pitch Tracker</title>
   <style>
     body {
       font-family: sans-serif;
       text-align: center;
-      background: #f7f7f7;
-      margin: 0;
+      background: #f0f0f0;
       padding: 2em;
     }
     canvas {
       border: 1px solid #ccc;
-      background: #fff;
+      background: white;
     }
   </style>
 </head>
@@ -23,46 +22,46 @@
   <script>
     const canvas = document.getElementById("pitchCanvas");
     const ctx = canvas.getContext("2d");
+    const analyserBufferLength = 2048;
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const analyserNode = audioContext.createAnalyser();
+    analyserNode.fftSize = analyserBufferLength;
 
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const analyser = audioCtx.createAnalyser();
-    analyser.fftSize = 2048;
-    const bufferLength = analyser.fftSize;
-    const buffer = new Float32Array(bufferLength);
-
+    const buffer = new Float32Array(analyserBufferLength);
     let time = 0;
     const points = [];
 
-    async function setup() {
+    async function startMic() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const source = audioCtx.createMediaStreamSource(stream);
-        source.connect(analyser);
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyserNode);
         requestAnimationFrame(draw);
       } catch (err) {
-        alert("Error accessing mic");
+        alert("Microphone access denied or error occurred.");
         console.error(err);
       }
     }
 
     function autoCorrelate(buffer, sampleRate) {
       let SIZE = buffer.length;
+      let bestOffset = -1;
+      let bestCorrelation = 0;
       let rms = 0;
 
       for (let i = 0; i < SIZE; i++) {
-        rms += buffer[i] * buffer[i];
+        let val = buffer[i];
+        rms += val * val;
       }
       rms = Math.sqrt(rms / SIZE);
       if (rms < 0.01) return -1;
-
-      let bestOffset = -1;
-      let bestCorrelation = 0;
 
       for (let offset = 15; offset < SIZE / 2; offset++) {
         let correlation = 0;
         for (let i = 0; i < SIZE / 2; i++) {
           correlation += buffer[i] * buffer[i + offset];
         }
+        correlation = correlation / (SIZE / 2);
         if (correlation > bestCorrelation) {
           bestCorrelation = correlation;
           bestOffset = offset;
@@ -70,16 +69,15 @@
       }
 
       if (bestCorrelation > 0.01) {
-        const frequency = sampleRate / bestOffset;
-        return frequency;
+        return sampleRate / bestOffset;
       }
 
       return -1;
     }
 
     function draw() {
-      analyser.getFloatTimeDomainData(buffer);
-      const pitch = autoCorrelate(buffer, audioCtx.sampleRate);
+      analyserNode.getFloatTimeDomainData(buffer);
+      const pitch = autoCorrelate(buffer, audioContext.sampleRate);
 
       if (pitch > 50 && pitch < 1000) {
         points.push([time, pitch]);
@@ -95,13 +93,13 @@
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       });
-      ctx.strokeStyle = 'black';
+      ctx.strokeStyle = "black";
       ctx.stroke();
 
       requestAnimationFrame(draw);
     }
 
-    setup();
+    startMic();
   </script>
 </body>
 </html>
