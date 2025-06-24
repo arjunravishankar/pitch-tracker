@@ -20,36 +20,70 @@
 <body>
   <h1>Real-Time Pitch Graph</h1>
   <canvas id="pitchCanvas" width="800" height="400"></canvas>
-  <script type="module">
-    import { PitchDetector } from 'https://cdn.skypack.dev/pitchy';
-
+  <script>
     const canvas = document.getElementById("pitchCanvas");
     const ctx = canvas.getContext("2d");
 
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     const analyser = audioCtx.createAnalyser();
-    const bufferLength = 2048;
+    analyser.fftSize = 2048;
+    const bufferLength = analyser.fftSize;
     const data = new Float32Array(bufferLength);
-    const pitchDetector = await PitchDetector.forFloat32Array(audioCtx.sampleRate);
-
-    async function setupMic() {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const source = audioCtx.createMediaStreamSource(stream);
-      source.connect(analyser);
-      draw();
-    }
 
     let time = 0;
     const points = [];
 
+    async function setupMic() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const source = audioCtx.createMediaStreamSource(stream);
+        source.connect(analyser);
+        draw();
+      } catch (err) {
+        alert('Microphone access denied or error occurred.');
+        console.error(err);
+      }
+    }
+
+    function autoCorrelate(buf, sampleRate) {
+      let SIZE = buf.length;
+      let MAX_SAMPLES = Math.floor(SIZE / 2);
+      let bestOffset = -1;
+      let bestCorrelation = 0;
+      let rms = 0;
+
+      for (let i = 0; i < SIZE; i++) {
+        rms += buf[i] * buf[i];
+      }
+      rms = Math.sqrt(rms / SIZE);
+      if (rms < 0.01) return -1; // silence
+
+      for (let offset = 15; offset < MAX_SAMPLES; offset++) {
+        let correlation = 0;
+        for (let i = 0; i < MAX_SAMPLES; i++) {
+          correlation += Math.abs((buf[i]) - (buf[i + offset]));
+        }
+        correlation = 1 - (correlation / MAX_SAMPLES);
+        if (correlation > bestCorrelation) {
+          bestCorrelation = correlation;
+          bestOffset = offset;
+        }
+      }
+
+      if (bestCorrelation > 0.9) {
+        return sampleRate / bestOffset;
+      }
+      return -1;
+    }
+
     function draw() {
       analyser.getFloatTimeDomainData(data);
-      const [pitch, clarity] = pitchDetector.findPitch(data);
+      const pitch = autoCorrelate(data, audioCtx.sampleRate);
 
-      if (clarity > 0.8 && pitch) {
+      if (pitch > 50 && pitch < 1000) {
         points.push([time, pitch]);
         time += 0.05;
-        if (points.length > 1000) points.shift(); // limit points for performance
+        if (points.length > 1000) points.shift(); // limit for performance
       }
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
